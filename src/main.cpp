@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include <Wifi.h>
-#include <unit_type.h>
+#include <WiFiUdp.h>
+#include <WiFiClient.h>
+#include "Discovery.h"
+#include "unit_type.h"
 
 #define THIS_DEVICE_ID 1
 
@@ -9,13 +12,6 @@ const int WaterValue = 1450;
 
 const char* WIFI_SSID = "Welcome to City 17 legacy";
 const char* WIFI_PW = "DeineMutter123";
-
-// const char* HORST = "192.168.0.60";
-// const char* HORST = "192.168.0.67"; // <- Raspi
-// const int   PORT   = 7777; // <- Raspi MechRain
-// const char* HORST = "192.168.0.60"; // <- PC ?
-const char* HORST = "192.168.0.57"; // <- PC
-const int   PORT   = 8989; // <- MechRain Rust
 
 const int IN_CHANNEL_0 = 34; 
 const int IN_CHANNEL_1 = 35; 
@@ -26,16 +22,16 @@ const int OUT_CHANNEL_1 = 25;
 const int OUT_CHANNEL_2 = 33;
 
 WiFiClient client;
+unsigned long lastDiscovery = 0;
 
 uint8_t* dataHeader = new uint8_t[3];
-//uint8_t* dataBuffer = new uint8_t[65535];
 uint8_t* dataBuffer = new uint8_t[65535];
 
 const byte HANDSHAKE[] = {
     DEVICE_ID, 0x00, 0x01, THIS_DEVICE_ID /* Send Device ID */
 };
 
-void checkConnection()
+bool checkConnection()
 {
 	if (WiFi.status() != WL_CONNECTED)
 	{
@@ -43,12 +39,34 @@ void checkConnection()
 		WiFi.begin(WIFI_SSID, WIFI_PW);
 		while (WiFi.status() != WL_CONNECTED)
 		{
-		delay(500);
-		Serial.print(".");
+			delay(500);
+			Serial.print(".");
 		}
 		Serial.println();
 		Serial.println("WiFi Connected");
 	}
+
+	if (client.connected()) {
+		return true;
+	}
+
+	if (millis() - lastDiscovery > 5000) {
+		sendDiscovery();
+		lastDiscovery = millis();
+	}
+			
+	if (parseServerInfo()) {
+		Serial.printf("Server found: %s:%d\n", serverInfo.ip.toString().c_str(), serverInfo.port);
+			
+		/* Establish connection with received server info */
+		if (client.connect(serverInfo.ip, serverInfo.port)) {
+			Serial.println("Connection established");
+			return true;
+		} else {
+			Serial.println("Connection failed");
+		}
+	}
+	return false;
 }
 
 int mapRelaisChannel(uint8_t channel) {
@@ -75,16 +93,15 @@ int mapMoistureChannel(uint8_t channel) {
 	return -1;
 }
 
-void sendMsg(String error, uint8_t msgId) {
-	Serial.println(error);
-	uint16_t len = error.length();
-	Serial.println(len);
-	dataHeader[0] = ERROR;
+void sendMsg(String msg, uint8_t msgId) {
+	Serial.println(msg);
+	uint16_t len = msg.length();
+	dataHeader[0] = msgId;
 	dataHeader[1] = len << 8;
 	dataHeader[2] = len;
 	/* last byte returned is 0 terminator, therefore need + 1 to get whole string 
 	(which we know the length of, so no terminator required) */
-	error.getBytes(dataBuffer, len + 1);
+	msg.getBytes(dataBuffer, len + 1);
 	client.write(dataHeader, 3);
 	client.write(dataBuffer, len);
 }
@@ -212,22 +229,18 @@ void setup()
 	delay(1000);
 	WiFi.setHostname("MechRain");
 	WiFi.mode(WIFI_STA);
+	udp.begin(UDP_PORT);
 }
 
 void loop()
 {
-	Serial.println("Hello World 2");
-
-	checkConnection();
-	Serial.println("Connecting to Server");
-	if (!client.connect(HORST, PORT))
-	{
-		Serial.println("Connection to Server failed");
+	if ( ! checkConnection()) {
+		delay(1000);
+		Serial.println("No connection to server");
 		return;
 	}
     
 	client.write(HANDSHAKE, 4);
-
 	bool keepGoing = true;
 
 	while (client.connected() && keepGoing)
@@ -250,8 +263,9 @@ void loop()
 					break;
 				case RESET:
 					keepGoing = false;
-					client.stop();
 					sendMsg("Resetting", STATUS_MSG);
+					lastDiscovery = 0;
+					client.stop();
 					break;
 				case TOGGLE_OUT_PIN:
 					Serial.println("  Toggle pin");
