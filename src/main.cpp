@@ -47,7 +47,7 @@ void sendMoisturePercent(uint8_t channel);
 void sendMoistureAbs(uint8_t channel);
 void handleMeasurementRequest();
 void handleDeviceSettingRequest();
-void handleDeviceSetting();
+void handleDeviceSettingChange();
 void handleToggleOutPin();
 
 void setup()
@@ -124,8 +124,10 @@ void loop()
 					}
 					break;
 				case DEVICE_SETTING_REQ:
+					handleDeviceSettingRequest();
 					break;
 				case DEVICE_SETTING_SET:
+					handleDeviceSettingChange();
 					break;
 				default:
 					String str1 = "Unknown command";
@@ -277,7 +279,10 @@ void handleMeasurementRequest() {
 }
 
 void handleDeviceSettingRequest() {
-	readHeader();
+	if ( ! readHeader()) {
+		sendMsg("Error reading header", ERROR);
+		return;
+	}
 	switch (lastCommandId()) {
 		case UDP_BROADCAST_DELAY:
 			Serial.println("Broadcast delay request");
@@ -297,8 +302,33 @@ void handleDeviceSettingRequest() {
 	}
 }
 
-void handleDeviceSetting() {
-
+void handleDeviceSettingChange() {
+	if ( ! readHeader()) {
+		sendMsg("Error reading header", ERROR);
+		return;
+	}
+	switch (lastCommandId()) {
+		uint16_t newDelay;
+		case UDP_BROADCAST_DELAY:
+			newDelay = lastCommandLength();
+			Serial.printf("Set broadcast delay: %d", newDelay);
+			udpBroadcastDelay = newDelay;
+			preferences.putUShort(PREF_KEY_UDP_BROADCAST_DELAY, newDelay);
+			sendHeader(ACK, 0);
+			break;
+		case CONNECTION_DELAY:
+			newDelay = lastCommandLength();
+			Serial.printf("Set connection delay: %d", newDelay);
+			connectionDelay = newDelay;
+			preferences.putUShort(PREF_KEY_CONNECTION_DELAY, newDelay);
+			sendHeader(ACK, 0);
+			break;
+		default:
+			String str1 = "Unknown request";
+			String msg1 = str1 + lastCommandId();
+			Serial.println(msg1);
+			sendMsg(msg1, ERROR);
+	}
 }
 
 /**

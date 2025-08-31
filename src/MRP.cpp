@@ -12,8 +12,8 @@ void sendHeader(const uint8_t id, const uint16_t length) {
 	client.write(dataHeader, 3);
 }
 
-int readHeader() {
-    return client.read(dataHeader, 3);
+bool readHeader() {
+    return client.read(dataHeader, 3) == 3;
 }
 
 uint8_t lastCommandId() {

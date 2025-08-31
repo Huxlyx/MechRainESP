@@ -10,7 +10,7 @@ void sendHeader(const uint8_t id, const uint16_t length);
 void sendMessage(String msg, uint8_t msgId);
 void sendByte(uint8_t val);
 void sendShort(uint16_t val);
-int readHeader();
+bool readHeader();
 int readData(int expected);
 uint8_t lastCommandId();
 uint16_t lastCommandLength();
