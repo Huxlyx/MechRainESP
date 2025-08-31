@@ -1,4 +1,3 @@
-// Discovery.h
 #ifndef DISCOVERY_H
 #define DISCOVERY_H
 
