@@ -5,7 +5,7 @@ WiFiUDP udp;
 const int UDP_PORT = 5000;
 
 void sendDiscovery() {
-	IPAddress broadcastIp(192,168,0,255);
+	IPAddress broadcastIp(255,255,255,255);
 	udp.beginPacket(broadcastIp, UDP_PORT);
 	udp.print("MECH-RAIN-HELLO");
 	udp.endPacket();
