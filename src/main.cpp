@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <Wifi.h>
+#include <Wire.h>
+#include <Adafruit_HTU21DF.h>
 #include <WiFiUdp.h>
 #include <WiFiClient.h>
 #include <Preferences.h>
@@ -7,7 +9,9 @@
 #include "MRP.h"
 #include "unit_type.h"
 
-#define THIS_DEVICE_ID 1
+Adafruit_HTU21DF sht21 = Adafruit_HTU21DF();
+
+#define THIS_DEVICE_ID 0
 
 const int AirValue = 3500;
 const int WaterValue = 1450;
@@ -15,13 +19,22 @@ const int WaterValue = 1450;
 const char* WIFI_SSID = "Welcome to City 17 legacy";
 const char* WIFI_PW = "DeineMutter123";
 
-const int IN_CHANNEL_0 = 34; 
-const int IN_CHANNEL_1 = 35; 
-const int IN_CHANNEL_2 = 32; 
+const int CO2_PWM_IN	= 17;
+const int PPM_RANGE 	= 5000;
 
-const int OUT_CHANNEL_0 = 26;
-const int OUT_CHANNEL_1 = 25;
-const int OUT_CHANNEL_2 = 33;
+const int IN_CHANNEL_0 	= 36;
+const int IN_CHANNEL_1 	= 39;
+const int IN_CHANNEL_2 	= 34;
+const int IN_CHANNEL_3	= 35;
+const int IN_CHANNEL_4 	= 32;
+const int IN_CHANNEL_5 	= 33;
+const int IN_CHANNEL_6 	= 25;
+const int IN_CHANNEL_7 	= 26;
+
+const int OUT_CHANNEL_0	= 27;
+const int OUT_CHANNEL_1	= 14;
+const int OUT_CHANNEL_2	= 12;
+const int OUT_CHANNEL_3	= 13;
 
 unsigned long lastDiscovery = 0;
 
@@ -31,17 +44,26 @@ const uint16_t DEFAULT_CONNECTION_DELAY = 1000;
 Preferences preferences;
 uint16_t udpBroadcastDelay;
 uint16_t connectionDelay;
+uint8_t deviceId;
+
+uint8_t inPinMask;
+uint8_t outPinMask;
+
+bool sht21Available;
 
 const char* PREF_KEY_UDP_BROADCAST_DELAY = "UdpBCDelay";
 const char* PREF_KEY_CONNECTION_DELAY = "ConDelay";
+const char* PREF_KEY_DEVICE_ID = "DeviceId";
+const char* PREF_KEY_IN_PIN_MASK = "InChMsk";
+const char* PREF_KEY_OUT_PIN_MASK = "OutChMsk";
 
 const byte HANDSHAKE[] = {
-    DEVICE_ID, 0x00, 0x01, THIS_DEVICE_ID /* Send Device ID */
+    DEVICE_ID, 0x00, 0x01, 0x00 /* Send Device ID */
 };
 
 bool checkConnection();
-int mapRelaisChannel(uint8_t channel);
-int mapMoistureChannel(uint8_t channel);
+int mapOutputChannel(uint8_t channel);
+int mapInputChannel(uint8_t channel);
 void sendMsg(String msg, uint8_t msgId);
 void sendMoisturePercent(uint8_t channel);
 void sendMoistureAbs(uint8_t channel);
@@ -49,16 +71,26 @@ void handleMeasurementRequest();
 void handleDeviceSettingRequest();
 void handleDeviceSettingChange();
 void handleToggleOutPin();
+uint16_t readCO2PWM();
 
 void setup()
 {
 	pinMode(OUT_CHANNEL_0, OUTPUT);
 	pinMode(OUT_CHANNEL_1, OUTPUT);
 	pinMode(OUT_CHANNEL_2, OUTPUT);
+	pinMode(OUT_CHANNEL_3, OUTPUT);
 
 	pinMode(IN_CHANNEL_0, INPUT);
 	pinMode(IN_CHANNEL_1, INPUT);
 	pinMode(IN_CHANNEL_2, INPUT);
+	pinMode(IN_CHANNEL_3, INPUT);
+	pinMode(IN_CHANNEL_4, INPUT);
+	pinMode(IN_CHANNEL_5, INPUT);
+	pinMode(IN_CHANNEL_6, INPUT);
+	pinMode(IN_CHANNEL_7, INPUT);
+
+	pinMode(CO2_PWM_IN, INPUT);
+	sht21Available = sht21.begin();
 
 	Serial.begin(115200);
 	delay(10);
@@ -66,6 +98,9 @@ void setup()
 	preferences.begin("MechRain", false);
 	udpBroadcastDelay = preferences.getUShort(PREF_KEY_UDP_BROADCAST_DELAY, DEFAULT_UDP_BROADCAST_DELAY);
 	connectionDelay = preferences.getUShort(PREF_KEY_CONNECTION_DELAY, DEFAULT_CONNECTION_DELAY);
+	deviceId = preferences.getUChar(PREF_KEY_DEVICE_ID, THIS_DEVICE_ID);
+	inPinMask = preferences.getUChar(PREF_KEY_IN_PIN_MASK, 0);
+	outPinMask = preferences.getUChar(PREF_KEY_OUT_PIN_MASK, 0);
 
 	Serial.printf("UDP broadcast delay: %d Connection delay: %d\n", udpBroadcastDelay, connectionDelay);
 
@@ -126,7 +161,7 @@ void loop()
 				case DEVICE_SETTING_REQ:
 					handleDeviceSettingRequest();
 					break;
-				case DEVICE_SETTING_SET:
+				case DEVICE_SETTING_CHANGE:
 					handleDeviceSettingChange();
 					break;
 				default:
@@ -178,7 +213,7 @@ bool checkConnection()
 	return false;
 }
 
-int mapRelaisChannel(uint8_t channel) {
+int mapOutputChannel(uint8_t channel) {
 	switch(channel) {
 		case 0:
 			return OUT_CHANNEL_0;
@@ -186,11 +221,13 @@ int mapRelaisChannel(uint8_t channel) {
 			return OUT_CHANNEL_1;
 		case 2:
 			return OUT_CHANNEL_2;
+		case 3:
+			return OUT_CHANNEL_3;
 	}
 	return -1;
 }
 
-int mapMoistureChannel(uint8_t channel) {
+int mapInputChannel(uint8_t channel) {
 	switch(channel) {
 		case 0:
 			return IN_CHANNEL_0;
@@ -198,14 +235,29 @@ int mapMoistureChannel(uint8_t channel) {
 			return IN_CHANNEL_1;
 		case 2:
 			return IN_CHANNEL_2;
+		case 3:
+			return IN_CHANNEL_3;
+		case 4:
+			return IN_CHANNEL_4;
+		case 5:
+			return IN_CHANNEL_5;
+		case 6:
+			return IN_CHANNEL_6;
+		case 7:
+			return IN_CHANNEL_7;
 	}
 	return -1;
 }
 
 void toggleRelais(int channel, int duration) {
-	int outChannel = mapRelaisChannel(channel);
+	int outChannel = mapOutputChannel(channel);
 	if (outChannel == -1) {
 		sendMsg("Channel not available", ERROR);
+		return;
+	}
+
+	if (channel & outPinMask == 0) {
+		sendMsg("Output pin not enabled", ERROR);
 		return;
 	}
 
@@ -215,9 +267,14 @@ void toggleRelais(int channel, int duration) {
 }
 
 void sendMoisturePercent(uint8_t channel) {
-	int inChannel = mapMoistureChannel(channel);
+	int inChannel = mapInputChannel(channel);
 	if (inChannel == -1) {
 		sendMsg("Channel not available", ERROR);
+		return;
+	}
+
+	if (channel & inPinMask == 0) {
+		sendMsg("Input pin not enabled", ERROR);
 		return;
 	}
 
@@ -232,7 +289,7 @@ void sendMoisturePercent(uint8_t channel) {
 
 void sendMoistureAbs(uint8_t channel) {
 
-	int anChannel = mapMoistureChannel(channel);
+	int anChannel = mapInputChannel(channel);
 	if (anChannel == -1) {
 		sendMsg("Channel not available!", ERROR);
 	}
@@ -241,6 +298,13 @@ void sendMoistureAbs(uint8_t channel) {
 	Serial.println(soilMoistureValue);
 	sendHeader(SOIL_MOISTURE_ABS, 2);
 	sendShort(soilMoistureValue);
+}
+
+void sendCo2Ppm() {
+	uint16_t ppmVal = readCO2PWM();
+	Serial.println(ppmVal);
+	sendHeader(CO2_PPM, 2);
+	sendShort(ppmVal);
 }
 
 void handleMeasurementRequest() {
@@ -267,7 +331,25 @@ void handleMeasurementRequest() {
 			}
 			break;
 		case TEMPERATURE:
+			if ( ! sht21Available) {
+				sendMsg("Sht21 not available", ERROR);
+			} else {
+				float shtTemp = sht21.readTemperature();
+				Serial.println(shtTemp);
+				sendHeader(TEMPERATURE, 4);
+				sendFloat(shtTemp);
+			}
+			break;
 		case HUMIDITY:
+			if ( ! sht21Available) {
+				sendMsg("Sht21 not available", ERROR);
+			} else {
+				float shtHumid = sht21.readHumidity();
+				Serial.println(shtHumid);
+				sendHeader(HUMIDITY, 4);
+				sendFloat(shtHumid);
+			}
+			break;
 		case LIGHT:
 		case DISTANCE_MM:
 		case DISTANCE_ABS:
@@ -284,6 +366,11 @@ void handleDeviceSettingRequest() {
 		return;
 	}
 	switch (lastCommandId()) {
+		case DEVICE_ID:
+			Serial.println("Device id request");
+			sendHeader(DEVICE_ID, 1);
+			sendByte(deviceId);
+			break;
 		case UDP_BROADCAST_DELAY:
 			Serial.println("Broadcast delay request");
 			sendHeader(UDP_BROADCAST_DELAY, 2);
@@ -292,7 +379,17 @@ void handleDeviceSettingRequest() {
 		case CONNECTION_DELAY:
 			Serial.println("Connection delay request");
 			sendHeader(CONNECTION_DELAY, 2);
-			sendShort(udpBroadcastDelay);
+			sendShort(connectionDelay);
+			break;
+		case IN_PIN_MASK:
+			Serial.println("Input pin mask request");
+			sendHeader(IN_PIN_MASK, 1);
+			sendByte(inPinMask);
+			break;
+		case OUT_PIN_MASK:
+			Serial.println("Output pin mask request");
+			sendHeader(OUT_PIN_MASK, 1);
+			sendByte(outPinMask);
 			break;
 		default:
 			String str1 = "Unknown request";
@@ -308,19 +405,41 @@ void handleDeviceSettingChange() {
 		return;
 	}
 	switch (lastCommandId()) {
-		uint16_t newDelay;
+		uint8_t byteVal;
+		uint16_t shortVal;
+		case DEVICE_ID:
+			byteVal = lastCommandLength();
+			Serial.printf("Set id: %d", byteVal);
+			deviceId = byteVal;
+			preferences.putUShort(PREF_KEY_DEVICE_ID, byteVal);
+			sendHeader(ACK, 0);
+			break;
 		case UDP_BROADCAST_DELAY:
-			newDelay = lastCommandLength();
-			Serial.printf("Set broadcast delay: %d", newDelay);
-			udpBroadcastDelay = newDelay;
-			preferences.putUShort(PREF_KEY_UDP_BROADCAST_DELAY, newDelay);
+			shortVal = lastCommandLength();
+			Serial.printf("Set broadcast delay: %d", shortVal);
+			udpBroadcastDelay = shortVal;
+			preferences.putUShort(PREF_KEY_UDP_BROADCAST_DELAY, shortVal);
 			sendHeader(ACK, 0);
 			break;
 		case CONNECTION_DELAY:
-			newDelay = lastCommandLength();
-			Serial.printf("Set connection delay: %d", newDelay);
-			connectionDelay = newDelay;
-			preferences.putUShort(PREF_KEY_CONNECTION_DELAY, newDelay);
+			shortVal = lastCommandLength();
+			Serial.printf("Set connection delay: %d", shortVal);
+			connectionDelay = shortVal;
+			preferences.putUShort(PREF_KEY_CONNECTION_DELAY, shortVal);
+			sendHeader(ACK, 0);
+			break;
+		case IN_PIN_MASK:
+			byteVal = lastCommandLength();
+			Serial.printf("Set in pin mask to: %d", byteVal);
+			inPinMask = byteVal;
+			preferences.putUShort(PREF_KEY_IN_PIN_MASK, byteVal);
+			sendHeader(ACK, 0);
+			break;
+		case OUT_PIN_MASK:
+			byteVal = lastCommandLength();
+			Serial.printf("Set out pin mask to: %d", byteVal);
+			outPinMask = byteVal;
+			preferences.putUShort(PREF_KEY_OUT_PIN_MASK, byteVal);
 			sendHeader(ACK, 0);
 			break;
 		default:
@@ -350,4 +469,16 @@ void handleToggleOutPin() {
 	sendMsg(msg1 + msg2, STATUS_MSG);
 
 	toggleRelais(channel, duration);
+}
+
+uint16_t readCO2PWM() {
+    unsigned long th;
+    uint16_t ppmPwm = 0;
+    do {
+        th = pulseIn(CO2_PWM_IN, HIGH, 2500000) / 1000;
+        float pulsepercent = th / 1004.0;
+        ppmPwm = PPM_RANGE * pulsepercent;
+		/* wait till we got result */
+    } while (th == 0);
+    return ppmPwm;
 }
