@@ -5,6 +5,14 @@ WiFiClient client;
 byte* dataHeader = new byte[3];
 byte* dataBuffer = new byte[65535];
 
+typedef union
+{
+	float val;
+	uint8_t bytes[4];
+} FLOATUNION_t;
+
+FLOATUNION_t floatVal;
+
 void sendHeader(const uint8_t id, const uint16_t length) {
 	dataHeader[0] = id;
 	dataHeader[1] = length << 8;
@@ -43,6 +51,11 @@ void sendShort(uint16_t val)
     dataBuffer[0] = val >> 8;
     dataBuffer[1] = val;
 	client.write(dataBuffer, 2);
+}
+
+void sendFloat(float val) {
+	floatVal.val = val;
+	client.write(floatVal.bytes, 4);
 }
 
 int readData(int expected) {
