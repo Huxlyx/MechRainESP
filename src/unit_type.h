@@ -35,6 +35,7 @@ const uint8_t IN_PIN_MASK           = 0xD2;
 const uint8_t OUT_PIN_MASK          = 0xD3;
 
 const uint8_t STATUS_MSG    = 0xF0;
+const uint8_t BUILD_ID      = 0xF1;
 const uint8_t ERROR         = 0xFF;
 
 /* I/O channel mask*/

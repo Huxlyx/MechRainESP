@@ -13,6 +13,9 @@ Adafruit_HTU21DF sht21 = Adafruit_HTU21DF();
 
 #define THIS_DEVICE_ID 0
 
+/* add build timestamp (auto-updated at each build) */
+#define BUILD_TIMESTAMP __DATE__ " " __TIME__
+
 const int AirValue = 3500;
 const int WaterValue = 1450;
 
@@ -57,10 +60,6 @@ const char* PREF_KEY_DEVICE_ID = "DeviceId";
 const char* PREF_KEY_IN_PIN_MASK = "InChMsk";
 const char* PREF_KEY_OUT_PIN_MASK = "OutChMsk";
 
-const byte HANDSHAKE[] = {
-    DEVICE_ID, 0x00, 0x01, 0x00 /* Send Device ID */
-};
-
 bool checkConnection();
 int mapOutputChannel(uint8_t channel);
 int mapInputChannel(uint8_t channel);
@@ -95,6 +94,7 @@ void setup()
 	Serial.begin(115200);
 	delay(10);
 
+
 	preferences.begin("MechRain", false);
 	udpBroadcastDelay = preferences.getUShort(PREF_KEY_UDP_BROADCAST_DELAY, DEFAULT_UDP_BROADCAST_DELAY);
 	connectionDelay = preferences.getUShort(PREF_KEY_CONNECTION_DELAY, DEFAULT_CONNECTION_DELAY);
@@ -103,6 +103,8 @@ void setup()
 	outPinMask = preferences.getUChar(PREF_KEY_OUT_PIN_MASK, 0);
 
 	Serial.printf("UDP broadcast delay: %d Connection delay: %d\n", udpBroadcastDelay, connectionDelay);
+	Serial.printf("Device id: %d\n", deviceId);
+	Serial.printf("inPinMask: %d outPinMask: %d\n", inPinMask, outPinMask);
 
 	WiFi.disconnect();
 	delay(1000);
@@ -119,9 +121,15 @@ void loop()
 		return;
 	}
     
-	client.write(HANDSHAKE, 4);
-	bool keepGoing = true;
+	/* send device id */
+	sendHeader(DEVICE_ID, 1);
+	sendByte(deviceId);
 
+	/* send build id */
+	String buildId = String(BUILD_TIMESTAMP);
+	sendMsg(buildId, BUILD_ID);
+
+	bool keepGoing = true;
 	while (client.connected() && keepGoing)
 	{
 		if (client.available())
@@ -409,28 +417,29 @@ void handleDeviceSettingChange() {
 		uint16_t shortVal;
 		case DEVICE_ID:
 			byteVal = lastCommandLength();
-			Serial.printf("Set id: %d", byteVal);
+			Serial.printf("Set id: %d\n", byteVal);
 			deviceId = byteVal;
-			preferences.putUShort(PREF_KEY_DEVICE_ID, byteVal);
+			byteVal = preferences.putUChar(PREF_KEY_DEVICE_ID, byteVal);
+			Serial.printf("Set id result: %d\n", byteVal);
 			sendHeader(ACK, 0);
 			break;
 		case UDP_BROADCAST_DELAY:
 			shortVal = lastCommandLength();
-			Serial.printf("Set broadcast delay: %d", shortVal);
+			Serial.printf("Set broadcast delay: %d\n", shortVal);
 			udpBroadcastDelay = shortVal;
 			preferences.putUShort(PREF_KEY_UDP_BROADCAST_DELAY, shortVal);
 			sendHeader(ACK, 0);
 			break;
 		case CONNECTION_DELAY:
 			shortVal = lastCommandLength();
-			Serial.printf("Set connection delay: %d", shortVal);
+			Serial.printf("Set connection delay: %d\n", shortVal);
 			connectionDelay = shortVal;
 			preferences.putUShort(PREF_KEY_CONNECTION_DELAY, shortVal);
 			sendHeader(ACK, 0);
 			break;
 		case IN_PIN_MASK:
 			byteVal = lastCommandLength();
-			Serial.printf("Set in pin mask to: %d", byteVal);
+			Serial.printf("Set in pin mask to: %d\n", byteVal);
 			inPinMask = byteVal;
 			preferences.putUShort(PREF_KEY_IN_PIN_MASK, byteVal);
 			sendHeader(ACK, 0);
