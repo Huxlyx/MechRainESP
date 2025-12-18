@@ -19,8 +19,8 @@ Adafruit_HTU21DF sht21 = Adafruit_HTU21DF();
 const int AirValue = 3500;
 const int WaterValue = 1450;
 
-const char* WIFI_SSID = "Welcome to City 17 legacy";
-const char* WIFI_PW = "DeineMutter123";
+const char* WIFI_SSID = "Vodafone-F028";
+const char* WIFI_PW = "$wRGA*4jqUDNgNb$";
 
 const int CO2_PWM_IN	= 17;
 const int PPM_RANGE 	= 5000;
@@ -319,6 +319,8 @@ void handleMeasurementRequest() {
 
     readHeader();
 
+	uint16_t co2ppm;
+
 	switch (lastCommandId()){
 		case SOIL_MOISTURE_PERCENT:
 			Serial.println("    SOIL_MOISTURE_PERCENT");
@@ -339,6 +341,7 @@ void handleMeasurementRequest() {
 			}
 			break;
 		case TEMPERATURE:
+			Serial.println("    TEMPERATURE");
 			if ( ! sht21Available) {
 				sendMsg("Sht21 not available", ERROR);
 			} else {
@@ -349,6 +352,7 @@ void handleMeasurementRequest() {
 			}
 			break;
 		case HUMIDITY:
+			Serial.println("    HUMIDITY");
 			if ( ! sht21Available) {
 				sendMsg("Sht21 not available", ERROR);
 			} else {
@@ -358,11 +362,19 @@ void handleMeasurementRequest() {
 				sendFloat(shtHumid);
 			}
 			break;
+		case CO2_PPM:
+			Serial.println("    CO2_PPM");
+			co2ppm = readCO2PWM();
+			Serial.println(co2ppm);
+			sendHeader(CO2_PPM, 2);
+			sendShort(co2ppm);
+			break;
 		case LIGHT:
 		case DISTANCE_MM:
 		case DISTANCE_ABS:
 		case UP_TIME:
 		case IMAGE:
+		default:
 			sendMsg("    Not available yet", ERROR);
 			break;
 	}
