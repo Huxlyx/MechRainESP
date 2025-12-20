@@ -33,9 +33,20 @@ const uint8_t UDP_BROADCAST_DELAY   = 0xD0;
 const uint8_t CONNECTION_DELAY      = 0xD1;
 const uint8_t IN_PIN_MASK           = 0xD2;
 const uint8_t OUT_PIN_MASK          = 0xD3;
+const uint8_t NUM_PIXELS            = 0xD4;
+
+const uint8_t RESET_LED             = 0xE0;
+const uint8_t SET_LED_MODE_1        = 0xE1;
+const uint8_t SET_LED_MODE_2        = 0xE2;
+const uint8_t SET_LED_MODE_3        = 0xE3;
+const uint8_t SET_LED_MODE_4        = 0xE4;
+const uint8_t SET_LED_MODE_5        = 0xE5;
+const uint8_t SET_LED_ALL_RGB       = 0xEA;
+const uint8_t SET_LED_SINGLE_RGB    = 0xEB;
 
 const uint8_t STATUS_MSG    = 0xF0;
 const uint8_t BUILD_ID      = 0xF1;
+const uint8_t HEARTBEAT     = 0xF2;
 const uint8_t ERROR         = 0xFF;
 
 /* I/O channel mask*/
