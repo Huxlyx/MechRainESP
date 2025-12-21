@@ -2,6 +2,7 @@
 #include <Wifi.h>
 #include <Wire.h>
 #include <Adafruit_HTU21DF.h>
+#include <Adafruit_NeoPixel.h>
 #include <WiFiUdp.h>
 #include <WiFiClient.h>
 #include <Preferences.h>
@@ -10,11 +11,14 @@
 #include "unit_type.h"
 
 Adafruit_HTU21DF sht21 = Adafruit_HTU21DF();
+Adafruit_NeoPixel* strip;
 
 #define THIS_DEVICE_ID 0
 
 /* add build timestamp (auto-updated at each build) */
 #define BUILD_TIMESTAMP __DATE__ " " __TIME__
+
+#define PIXEL_PIN 19
 
 const int AirValue = 3500;
 const int WaterValue = 1450;
@@ -54,11 +58,17 @@ uint8_t outPinMask;
 
 bool sht21Available;
 
+uint16_t numPixels;
+
+uint8_t ledMode;
+int ledState = 0;
+
 const char* PREF_KEY_UDP_BROADCAST_DELAY = "UdpBCDelay";
 const char* PREF_KEY_CONNECTION_DELAY = "ConDelay";
 const char* PREF_KEY_DEVICE_ID = "DeviceId";
 const char* PREF_KEY_IN_PIN_MASK = "InChMsk";
 const char* PREF_KEY_OUT_PIN_MASK = "OutChMsk";
+const char* PREF_KEY_NUM_PIXELS = "NumPixels";
 
 bool checkConnection();
 int mapOutputChannel(uint8_t channel);
@@ -70,7 +80,11 @@ void handleMeasurementRequest();
 void handleDeviceSettingRequest();
 void handleDeviceSettingChange();
 void handleToggleOutPin();
+void handleSetAllLed();
+void handleSetLedMode1();
+void handleResetLed();
 uint16_t readCO2PWM();
+void rainbow();
 
 void setup()
 {
@@ -101,10 +115,16 @@ void setup()
 	deviceId = preferences.getUChar(PREF_KEY_DEVICE_ID, THIS_DEVICE_ID);
 	inPinMask = preferences.getUChar(PREF_KEY_IN_PIN_MASK, 0);
 	outPinMask = preferences.getUChar(PREF_KEY_OUT_PIN_MASK, 0);
+	numPixels = preferences.getUShort(PREF_KEY_NUM_PIXELS, 0);
+
+	strip = new Adafruit_NeoPixel(numPixels, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
+	strip->begin();
+	strip->show(); /* Initialize all pixels to 'off' */
 
 	Serial.printf("UDP broadcast delay: %d Connection delay: %d\n", udpBroadcastDelay, connectionDelay);
 	Serial.printf("Device id: %d\n", deviceId);
 	Serial.printf("inPinMask: %d outPinMask: %d\n", inPinMask, outPinMask);
+	Serial.printf("Num pixels: %d\n", numPixels);
 
 	WiFi.disconnect();
 	delay(1000);
@@ -172,10 +192,37 @@ void loop()
 				case DEVICE_SETTING_CHANGE:
 					handleDeviceSettingChange();
 					break;
+				case SET_LED_ALL_RGB:
+					handleSetAllLed();
+					break;
+				case SET_LED_MODE_1:
+					handleSetLedMode1();
+					break;
+				case RESET_LED:
+					Serial.println("  Reset LED");
+					for (int i = 0; i < numPixels; ++i)
+					{
+						strip->setPixelColor(i, 0, 0, 0);
+					}
+					strip->show();
+					sendHeader(ACK, 0);
+					break;
+				case HEARTBEAT:
+					Serial.println("  Heartbeat");
+					/* just acknowledge */
+					sendHeader(HEARTBEAT, 0);
+					break;
 				default:
 					String str1 = "Unknown command";
 					String msg1 = str1 + lastCommandId();
 					sendMsg(msg1, ERROR);
+					break;
+			}
+		} else if (ledMode > 0) {
+			Serial.println("Updating LED mode");
+			switch (ledMode) {
+				case 1:
+					rainbow();
 					break;
 			}
 		}
@@ -411,6 +458,11 @@ void handleDeviceSettingRequest() {
 			sendHeader(OUT_PIN_MASK, 1);
 			sendByte(outPinMask);
 			break;
+		case NUM_PIXELS:
+			Serial.println("Num pixels request");
+			sendHeader(NUM_PIXELS, 2);
+			sendShort(numPixels);
+			break;
 		default:
 			String str1 = "Unknown request";
 			String msg1 = str1 + lastCommandId();
@@ -458,9 +510,19 @@ void handleDeviceSettingChange() {
 			break;
 		case OUT_PIN_MASK:
 			byteVal = lastCommandLength();
-			Serial.printf("Set out pin mask to: %d", byteVal);
+			Serial.printf("Set out pin mask to: %d\n", byteVal);
 			outPinMask = byteVal;
 			preferences.putUShort(PREF_KEY_OUT_PIN_MASK, byteVal);
+			sendHeader(ACK, 0);
+			break;
+		case NUM_PIXELS:
+			shortVal = lastCommandLength();
+			Serial.printf("Set num pixels to: %d\n", shortVal);
+			numPixels = shortVal;
+			preferences.putUShort(PREF_KEY_NUM_PIXELS, shortVal);
+			Serial.printf("Reconfiguring strip with %d pixels\n", numPixels);
+			delete strip;
+			strip = new Adafruit_NeoPixel(numPixels, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
 			sendHeader(ACK, 0);
 			break;
 		default:
@@ -502,4 +564,47 @@ uint16_t readCO2PWM() {
 		/* wait till we got result */
     } while (th == 0);
     return ppmPwm;
+}
+
+void handleSetAllLed() {
+
+	ledMode = 0;
+
+	Serial.println("  Set ALL LED");
+	int commandLength = lastCommandLength();
+
+	if (commandLength != 3) {
+		String str1 = "Expected 3 byte payload but got ";
+		String errString = str1 + commandLength;
+		sendMsg(errString, ERROR);
+		return;
+	}
+
+	byte rgbBuffer[3];
+	client.read(rgbBuffer, 3);
+	Serial.printf("  R: %d G: %d B: %d\n", rgbBuffer[0], rgbBuffer[1], rgbBuffer[2]);
+	for (int i = 0; i < numPixels; ++i)
+	{
+		strip->setPixelColor(i, rgbBuffer[0], rgbBuffer[1], rgbBuffer[2]);
+	}
+	strip->show();
+	Serial.println("  LEDs updated");
+	sendHeader(ACK, 0);
+	Serial.println("  ACK sent");
+}
+
+void handleSetLedMode1() {
+	Serial.println("  Set LED Mode 1 (rainbow)");
+	ledMode = 1;
+	sendHeader(ACK, 0);
+}
+
+void rainbow()
+{
+	while ( ! client.available() && client.connected()) {
+		strip->rainbow(ledState);
+		strip->show();
+		ledState += 128;
+		delay(20);
+	}
 }
