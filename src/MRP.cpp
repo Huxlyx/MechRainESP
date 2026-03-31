@@ -15,7 +15,7 @@ FLOATUNION_t floatVal;
 
 void sendHeader(const uint8_t id, const uint16_t length) {
 	dataHeader[0] = id;
-	dataHeader[1] = length << 8;
+	dataHeader[1] = length >> 8;
 	dataHeader[2] = length;
 	client.write(dataHeader, 3);
 }

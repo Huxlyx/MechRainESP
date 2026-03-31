@@ -9,6 +9,7 @@
 #include "Discovery.h"
 #include "MRP.h"
 #include "unit_type.h"
+#include "secrets.h"
 
 Adafruit_HTU21DF sht21 = Adafruit_HTU21DF();
 Adafruit_NeoPixel* strip;
@@ -23,10 +24,7 @@ Adafruit_NeoPixel* strip;
 const int AirValue = 3500;
 const int WaterValue = 1450;
 
-const char* WIFI_SSID = "Vodafone-F028";
-const char* WIFI_PW = "$wRGA*4jqUDNgNb$";
-
-const int CO2_PWM_IN	= 17;
+const int CO2_PWM_IN= 17;
 const int PPM_RANGE 	= 5000;
 
 const int IN_CHANNEL_0 	= 36;
@@ -81,8 +79,8 @@ void handleDeviceSettingRequest();
 void handleDeviceSettingChange();
 void handleToggleOutPin();
 void handleSetAllLed();
-void handleSetLedMode1();
 void handleResetLed();
+void handleSetLedMode1();
 uint16_t readCO2PWM();
 void rainbow();
 
@@ -154,12 +152,9 @@ void loop()
 	{
 		if (client.available())
         {
-			uint8_t retryIndex = 0;
-			uint16_t payload;
-			while (readHeader() < 0 && retryIndex++ < 100)
-			{
-				//... read until we actually receive data - bug?
-				Serial.println("retry");
+			if ( ! readHeader()) {
+				Serial.println("Failed to read header");
+				continue;
 			}
 			Serial.println("Got Command");
             switch (lastCommandId())
@@ -177,13 +172,15 @@ void loop()
 				case TOGGLE_OUT_PIN:
 					Serial.println("  Toggle pin");
 					/* expect 3 byte payload */
-					payload = lastCommandLength();
-					if (payload != 3) {
-						String str1 = "Expected 3 byte payload but got ";
-						String errString = str1 + payload;
-						sendMsg(errString, ERROR);
-					} else {
-						handleToggleOutPin();
+					{
+						uint16_t payload = lastCommandLength();
+						if (payload != 3) {
+							String str1 = "Expected 3 byte payload but got ";
+							String errString = str1 + payload;
+							sendMsg(errString, ERROR);
+						} else {
+							handleToggleOutPin();
+						}
 					}
 					break;
 				case DEVICE_SETTING_REQ:
@@ -311,7 +308,7 @@ void toggleRelais(int channel, int duration) {
 		return;
 	}
 
-	if (channel & outPinMask == 0) {
+	if ((channel & outPinMask) == 0) {
 		sendMsg("Output pin not enabled", ERROR);
 		return;
 	}
@@ -328,10 +325,11 @@ void sendMoisturePercent(uint8_t channel) {
 		return;
 	}
 
-	if (channel & inPinMask == 0) {
-		sendMsg("Input pin not enabled", ERROR);
-		return;
-	}
+	// disbladed for now
+	// if (channel & inPinMask == 0) {
+	// 	sendMsg("Input pin not enabled", ERROR);
+	// 	return;
+	// }
 
 	int soilMoistureValue = analogRead(inChannel);
 	int soilmoisturepercent = map(soilMoistureValue, AirValue, WaterValue, 0, 100);
@@ -591,6 +589,16 @@ void handleSetAllLed() {
 	Serial.println("  LEDs updated");
 	sendHeader(ACK, 0);
 	Serial.println("  ACK sent");
+}
+void handleResetLed() {
+	Serial.println("  Reset LED");
+	ledMode = 0;
+	for (int i = 0; i < numPixels; ++i)
+	{
+		strip->setPixelColor(i, 0, 0, 0);
+	}
+	strip->show();
+	sendHeader(ACK, 0);
 }
 
 void handleSetLedMode1() {

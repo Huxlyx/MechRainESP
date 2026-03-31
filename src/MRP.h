@@ -7,7 +7,7 @@
 extern WiFiClient client;
 extern byte* dataBuffer;
 void sendHeader(const uint8_t id, const uint16_t length);
-void sendMessage(String msg, uint8_t msgId);
+void sendMsg(String msg, uint8_t msgId);
 void sendByte(uint8_t val);
 void sendShort(uint16_t val);
 void sendFloat(float val);
