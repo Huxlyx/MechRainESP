@@ -21,10 +21,10 @@ Adafruit_NeoPixel* strip;
 
 #define PIXEL_PIN 19
 
-const int AirValue = 3500;
-const int WaterValue = 1450;
+const int AirValue 		= 3500;
+const int WaterValue 	= 1450;
 
-const int CO2_PWM_IN= 17;
+const int CO2_PWM_IN	= 17;
 const int PPM_RANGE 	= 5000;
 
 const int IN_CHANNEL_0 	= 36;
@@ -54,6 +54,8 @@ uint8_t deviceId;
 uint8_t inPinMask;
 uint8_t outPinMask;
 
+bool testMode;
+
 bool sht21Available;
 
 uint16_t numPixels;
@@ -67,6 +69,7 @@ const char* PREF_KEY_DEVICE_ID = "DeviceId";
 const char* PREF_KEY_IN_PIN_MASK = "InChMsk";
 const char* PREF_KEY_OUT_PIN_MASK = "OutChMsk";
 const char* PREF_KEY_NUM_PIXELS = "NumPixels";
+const char* PREF_KEY_TEST_MODE = "TestMode";
 
 bool checkConnection();
 int mapOutputChannel(uint8_t channel);
@@ -114,6 +117,7 @@ void setup()
 	inPinMask = preferences.getUChar(PREF_KEY_IN_PIN_MASK, 0);
 	outPinMask = preferences.getUChar(PREF_KEY_OUT_PIN_MASK, 0);
 	numPixels = preferences.getUShort(PREF_KEY_NUM_PIXELS, 0);
+	testMode = preferences.getBool(PREF_KEY_TEST_MODE, false);
 
 	strip = new Adafruit_NeoPixel(numPixels, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
 	strip->begin();
@@ -123,10 +127,11 @@ void setup()
 	Serial.printf("Device id: %d\n", deviceId);
 	Serial.printf("inPinMask: %d outPinMask: %d\n", inPinMask, outPinMask);
 	Serial.printf("Num pixels: %d\n", numPixels);
+	Serial.printf("Test mode: %s\n", testMode ? "enabled" : "disabled");
 
 	WiFi.disconnect();
 	delay(1000);
-	WiFi.setHostname("MechRain");
+	WiFi.setHostname("MechRain Unit");
 	WiFi.mode(WIFI_STA);
 	udp.begin(UDP_PORT);
 }
@@ -134,7 +139,7 @@ void setup()
 void loop()
 {
 	if ( ! checkConnection()) {
-		delay(1000);
+		delay(connectionDelay);
 		Serial.println("No connection to server");
 		return;
 	}
@@ -246,8 +251,8 @@ bool checkConnection()
 		return true;
 	}
 
-	if (millis() - lastDiscovery > 5000) {
-		sendDiscovery();
+	if (millis() - lastDiscovery > udpBroadcastDelay) {
+		sendDiscovery(testMode);
 		lastDiscovery = millis();
 	}
 			
@@ -461,6 +466,11 @@ void handleDeviceSettingRequest() {
 			sendHeader(NUM_PIXELS, 2);
 			sendShort(numPixels);
 			break;
+		case TEST_MODE:
+			Serial.println("Test mode request");
+			sendHeader(TEST_MODE, 1);
+			sendByte(testMode ? 1 : 0);
+			break;
 		default:
 			String str1 = "Unknown request";
 			String msg1 = str1 + lastCommandId();
@@ -521,6 +531,13 @@ void handleDeviceSettingChange() {
 			Serial.printf("Reconfiguring strip with %d pixels\n", numPixels);
 			delete strip;
 			strip = new Adafruit_NeoPixel(numPixels, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
+			sendHeader(ACK, 0);
+			break;
+		case TEST_MODE:
+			byteVal = lastCommandLength();
+			testMode = byteVal != 0;
+			Serial.printf("Set test mode to: %s\n", testMode ? "enabled" : "disabled");
+			preferences.putBool(PREF_KEY_TEST_MODE, testMode);
 			sendHeader(ACK, 0);
 			break;
 		default:

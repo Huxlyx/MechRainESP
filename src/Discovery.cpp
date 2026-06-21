@@ -4,10 +4,10 @@ ServerInfo serverInfo;
 WiFiUDP udp;
 const int UDP_PORT = 5000;
 
-void sendDiscovery() {
+void sendDiscovery(bool testMode) {
 	IPAddress broadcastIp(255,255,255,255);
 	udp.beginPacket(broadcastIp, UDP_PORT);
-	udp.print("MECH-RAIN-HELLO");
+	udp.print(testMode ? "MECH-RAIN-TEST" : "MECH-RAIN-HELLO");
 	udp.endPacket();
 	Serial.println("UDP Discovery sent");
 }

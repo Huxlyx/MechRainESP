@@ -13,7 +13,7 @@ extern ServerInfo serverInfo;
 extern WiFiUDP udp;
 extern const int UDP_PORT;
 
-void sendDiscovery();
+void sendDiscovery(bool testMode);
 bool parseServerInfo();
 
 #endif  // DISCOVERY_H

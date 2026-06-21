@@ -34,6 +34,7 @@ const uint8_t CONNECTION_DELAY      = 0xD1;
 const uint8_t IN_PIN_MASK           = 0xD2;
 const uint8_t OUT_PIN_MASK          = 0xD3;
 const uint8_t NUM_PIXELS            = 0xD4;
+const uint8_t TEST_MODE             = 0xD5;
 
 const uint8_t RESET_LED             = 0xE0;
 const uint8_t SET_LED_MODE_1        = 0xE1;
