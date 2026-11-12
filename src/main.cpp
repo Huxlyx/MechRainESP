@@ -145,8 +145,7 @@ void loop()
 	}
     
 	/* send device id */
-	sendHeader(DEVICE_ID, 1);
-	sendByte(deviceId);
+	sendUInt8Packet(DEVICE_ID, deviceId);
 
 	/* send build id */
 	String buildId = String(BUILD_TIMESTAMP);
@@ -215,7 +214,7 @@ void loop()
 					sendHeader(HEARTBEAT, 0);
 					break;
 				default:
-					String str1 = "Unknown command";
+					String str1 = "Unknown command ";
 					String msg1 = str1 + lastCommandId();
 					sendMsg(msg1, ERROR);
 					break;
@@ -261,6 +260,8 @@ bool checkConnection()
 			
 		/* Establish connection with received server info */
 		if (client.connect(serverInfo.ip, serverInfo.port)) {
+			/* replies are small and must not wait for the server's ACK of the previous segment (Nagle) */
+			client.setNoDelay(true);
 			Serial.println("Connection established");
 			return true;
 		} else {
@@ -341,8 +342,7 @@ void sendMoisturePercent(uint8_t channel) {
 	Serial.print(soilmoisturepercent);
 	Serial.println("%");
 
-	sendHeader(SOIL_MOISTURE_PERCENT, 1);
-	sendByte(soilmoisturepercent);
+	sendChanneledUInt8Packet(SOIL_MOISTURE_PERCENT, soilmoisturepercent, channel);
 }
 
 void sendMoistureAbs(uint8_t channel) {
@@ -350,44 +350,60 @@ void sendMoistureAbs(uint8_t channel) {
 	int anChannel = mapInputChannel(channel);
 	if (anChannel == -1) {
 		sendMsg("Channel not available!", ERROR);
+		return;
 	}
 
 	uint16_t soilMoistureValue = analogRead(anChannel);
 	Serial.println(soilMoistureValue);
-	sendHeader(SOIL_MOISTURE_ABS, 2);
-	sendShort(soilMoistureValue);
+	sendChanneledUInt16Packet(SOIL_MOISTURE_ABS, soilMoistureValue, channel);
 }
 
 void sendCo2Ppm() {
 	uint16_t ppmVal = readCO2PWM();
 	Serial.println(ppmVal);
-	sendHeader(CO2_PPM, 2);
-	sendShort(ppmVal);
+	sendUInt16Packet(CO2_PPM, ppmVal);
+}
+
+/**
+ * Reads the channel field (CHANNEL_ID header + 1 byte channel) of a channeled measurement request.
+ *
+ * @return the channel, or -1 if the field is missing or incomplete (an error has been sent)
+ */
+int readChannel() {
+	if ( ! readHeader() || lastCommandId() != CHANNEL_ID) {
+		sendMsg("Expected channel id in measurement request", ERROR);
+		return -1;
+	}
+	const int channel = readByte();
+	if (channel < 0) {
+		sendMsg("Channel id missing in measurement request", ERROR);
+	}
+	return channel;
 }
 
 void handleMeasurementRequest() {
 
-    readHeader();
+	if ( ! readHeader()) {
+		sendMsg("Error reading measurement request", ERROR);
+		return;
+	}
 
 	uint16_t co2ppm;
+	int channel;
 
 	switch (lastCommandId()){
 		case SOIL_MOISTURE_PERCENT:
 			Serial.println("    SOIL_MOISTURE_PERCENT");
-    		readHeader();
-			if (lastCommandId() == CHANNEL_ID) {
-				sendMoisturePercent(client.read());
-			} else {
-				Serial.println("    HELP! (1)");
+			channel = readChannel();
+			if (channel >= 0) {
+				sendMoisturePercent(channel);
 			}
 			break;
 		case SOIL_MOISTURE_ABS:
 			Serial.println("    SOIL_MOISTURE_ABS");
-    		readHeader();
-			if (lastCommandId() == CHANNEL_ID) {
-				sendMoistureAbs(client.read());
-			} else {
-				Serial.println("    HELP! (1)");
+			channel = readChannel();
+			if (channel >= 0) {
+				sendMoistureAbs(channel);
 			}
 			break;
 		case TEMPERATURE:
@@ -397,8 +413,7 @@ void handleMeasurementRequest() {
 			} else {
 				float shtTemp = sht21.readTemperature();
 				Serial.println(shtTemp);
-				sendHeader(TEMPERATURE, 4);
-				sendFloat(shtTemp);
+				sendFloatPacket(TEMPERATURE, shtTemp);
 			}
 			break;
 		case HUMIDITY:
@@ -408,16 +423,14 @@ void handleMeasurementRequest() {
 			} else {
 				float shtHumid = sht21.readHumidity();
 				Serial.println(shtHumid);
-				sendHeader(HUMIDITY, 4);
-				sendFloat(shtHumid);
+				sendFloatPacket(HUMIDITY, shtHumid);
 			}
 			break;
 		case CO2_PPM:
 			Serial.println("    CO2_PPM");
 			co2ppm = readCO2PWM();
 			Serial.println(co2ppm);
-			sendHeader(CO2_PPM, 2);
-			sendShort(co2ppm);
+			sendUInt16Packet(CO2_PPM, co2ppm);
 			break;
 		case LIGHT:
 		case DISTANCE_MM:
@@ -438,41 +451,34 @@ void handleDeviceSettingRequest() {
 	switch (lastCommandId()) {
 		case DEVICE_ID:
 			Serial.println("Device id request");
-			sendHeader(DEVICE_ID, 1);
-			sendByte(deviceId);
+			sendUInt8Packet(DEVICE_ID, deviceId);
 			break;
 		case UDP_BROADCAST_DELAY:
 			Serial.println("Broadcast delay request");
-			sendHeader(UDP_BROADCAST_DELAY, 2);
-			sendShort(udpBroadcastDelay);
+			sendUInt16Packet(UDP_BROADCAST_DELAY, udpBroadcastDelay);
 			break;
 		case CONNECTION_DELAY:
 			Serial.println("Connection delay request");
-			sendHeader(CONNECTION_DELAY, 2);
-			sendShort(connectionDelay);
+			sendUInt16Packet(CONNECTION_DELAY, connectionDelay);
 			break;
 		case IN_PIN_MASK:
 			Serial.println("Input pin mask request");
-			sendHeader(IN_PIN_MASK, 1);
-			sendByte(inPinMask);
+			sendUInt8Packet(IN_PIN_MASK, inPinMask);
 			break;
 		case OUT_PIN_MASK:
 			Serial.println("Output pin mask request");
-			sendHeader(OUT_PIN_MASK, 1);
-			sendByte(outPinMask);
+			sendUInt8Packet(OUT_PIN_MASK, outPinMask);
 			break;
 		case NUM_PIXELS:
 			Serial.println("Num pixels request");
-			sendHeader(NUM_PIXELS, 2);
-			sendShort(numPixels);
+			sendUInt16Packet(NUM_PIXELS, numPixels);
 			break;
 		case TEST_MODE:
 			Serial.println("Test mode request");
-			sendHeader(TEST_MODE, 1);
-			sendByte(testMode ? 1 : 0);
+			sendUInt8Packet(TEST_MODE, testMode ? 1 : 0);
 			break;
 		default:
-			String str1 = "Unknown request";
+			String str1 = "Unknown request ";
 			String msg1 = str1 + lastCommandId();
 			Serial.println(msg1);
 			sendMsg(msg1, ERROR);
@@ -596,7 +602,10 @@ void handleSetAllLed() {
 	}
 
 	byte rgbBuffer[3];
-	client.read(rgbBuffer, 3);
+	if (client.readBytes(rgbBuffer, 3) != 3) {
+		sendMsg("Incomplete RGB payload", ERROR);
+		return;
+	}
 	Serial.printf("  R: %d G: %d B: %d\n", rgbBuffer[0], rgbBuffer[1], rgbBuffer[2]);
 	for (int i = 0; i < numPixels; ++i)
 	{

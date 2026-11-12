@@ -7,11 +7,15 @@
 extern WiFiClient client;
 extern byte* dataBuffer;
 void sendHeader(const uint8_t id, const uint16_t length);
+void sendPacket(const uint8_t id, const uint8_t* payload, const uint16_t length);
+void sendUInt8Packet(const uint8_t id, const uint8_t val);
+void sendUInt16Packet(const uint8_t id, const uint16_t val);
+void sendFloatPacket(const uint8_t id, const float val);
+void sendChanneledUInt8Packet(const uint8_t id, const uint8_t val, const uint8_t channel);
+void sendChanneledUInt16Packet(const uint8_t id, const uint16_t val, const uint8_t channel);
 void sendMsg(String msg, uint8_t msgId);
-void sendByte(uint8_t val);
-void sendShort(uint16_t val);
-void sendFloat(float val);
 bool readHeader();
+int readByte();
 int readData(int expected);
 uint8_t lastCommandId();
 uint16_t lastCommandLength();
